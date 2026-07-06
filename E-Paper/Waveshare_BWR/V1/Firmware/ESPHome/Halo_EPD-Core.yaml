@@ -1,7 +1,7 @@
 #Define Project
 substitutions:
   name: halo-epd
-  version: "25.3.16.2"
+  version: "25.8.28.2"
   device_description: ${name} - v${version}.
 
 esp32:
@@ -10,7 +10,8 @@ esp32:
   flash_size: 4MB
   framework:
     type: esp-idf
-    version: latest
+    version: 5.3.1
+    platform_version: 6.9.0
 
 psram:
   mode: octal
@@ -145,8 +146,8 @@ spi:
   clk_pin: GPIO5
 
 i2c:
-  - sda: GPIO7
-    scl: GPIO8
+  - sda: GPIO8
+    scl: GPIO7
     id: lily_i2c
 
 display:
@@ -702,40 +703,15 @@ text_sensor:
       else {
         return std::string("Extremely abnormal");}   
 
-# light:
-#   - platform: esp32_rmt_led_strip
-#     id: rgb_light
-#     name: "Halo"
-#     pin: GPIO47
-#     default_transition_length: 0s
-#     chipset: WS2812
-#     num_leds: 11
-#     rgb_order: grb
-#     effects:
-#       - pulse:
-#           name: "Slow Pulse"
-#           transition_length: 500ms
-#           update_interval: 500ms
-#           min_brightness: 10%
-#           max_brightness: 50%
-#       - addressable_rainbow:
-#           name: Rainbow Effect With Custom Values
-#           speed: 10
-#           width: 50
-#   - platform: monochromatic
-#     output: backlight
-#     name: "Display Backlight"
-#     restore_mode: ALWAYS_ON
-
 light:
   - platform: esp32_rmt_led_strip
     id: rgb_light
-    name: "Neopixel"
-    pin: GPIO21
+    name: "Halo"
+    pin: GPIO9
     default_transition_length: 0s
     chipset: WS2812
-    num_leds: 1
-    rgb_order: rgb
+    num_leds: 11
+    rgb_order: grb
     effects:
       - pulse:
           name: "Slow Pulse"
@@ -745,8 +721,29 @@ light:
           max_brightness: 50%
       - addressable_rainbow:
           name: Rainbow Effect
-          speed: 50
-          width: 1
+          speed: 10
+          width: 50
+
+# light:
+#   - platform: esp32_rmt_led_strip
+#     id: rgb_light
+#     name: "Neopixel"
+#     pin: GPIO21
+#     default_transition_length: 0s
+#     chipset: WS2812
+#     num_leds: 1
+#     rgb_order: rgb
+#     effects:
+#       - pulse:
+#           name: "Slow Pulse"
+#           transition_length: 500ms
+#           update_interval: 500ms
+#           min_brightness: 10%
+#           max_brightness: 50%
+#       - addressable_rainbow:
+#           name: Rainbow Effect
+#           speed: 50
+#           width: 1
 
 image:
   - file: https://yashmulgaonkar.github.io/assets/YM2_epd.png

@@ -1,17 +1,19 @@
-name: Build and Release Halo TFT LCD Firmware
+name: Build and Release Halo EPD Firmware
 
 env:
-  DEVICE_NAME: halo
+  DEVICE_NAME: halo-epd
 
 on:
   push:
     paths:
-      - 'TFT_LCD/**'
+      - 'E-Paper/**'
   workflow_dispatch:
     inputs:
       version:
         description: 'The version of the firmware to build'
         required: true
+  release:
+    types: [published]
 
 jobs:
   create-release:
@@ -27,8 +29,8 @@ jobs:
       - name: Get Version
         id: get_version
         run: |
-          if [ -f "TFT_LCD/T-Display-Long/V1/Firmware/ESPHome/Halo-v1-Core.yaml" ]; then
-            version=$(awk '/substitutions:/ {found=1} found && /version:/ {print $2; exit}' TFT_LCD/T-Display-Long/V1/Firmware/ESPHome/Halo-v1-Core.yaml | tr -d '"')
+          if [ -f "E-Paper/Waveshare_BWR/V1/Firmware/ESPHome/Halo_EPD-Core.yaml" ]; then
+            version=$(awk '/substitutions:/ {found=1} found && /version:/ {print $2; exit}' E-Paper/Waveshare_BWR/V1/Firmware/ESPHome/Halo_EPD-Core.yaml | tr -d '"')
             if [ -n "$version" ]; then
               echo "project_version=$version" >> $GITHUB_ENV
               echo "Version extracted: $version"
@@ -71,14 +73,14 @@ jobs:
           
       - name: Build Firmware
         run: |
-          cd TFT_LCD/T-Display-Long/V1/Firmware/ESPHome
-          esphome compile Halo-v1.yaml
+          cd E-Paper/Waveshare_BWR/V1/Firmware/ESPHome
+          esphome compile Halo_EPD.yaml
           echo "Build completed. Checking for firmware files..."
           find .esphome/build -name "*.bin" -type f
           
       - name: Debug - Show Build Directory
         run: |
-          cd TFT_LCD/T-Display-Long/V1/Firmware/ESPHome
+          cd E-Paper/Waveshare_BWR/V1/Firmware/ESPHome
           echo "Build directory structure:"
           ls -la .esphome/ || echo "No .esphome directory found"
           ls -la .esphome/build/ || echo "No build directory found"
@@ -106,12 +108,11 @@ jobs:
       - name: Upload Firmware Artifact
         uses: actions/upload-artifact@v4.3.6
         with:
-          name: firmware-tft
+          name: firmware-epd
           path: |
-            TFT_LCD/T-Display-Long/V1/Firmware/ESPHome/.esphome/build/*/.pioenvs/*/firmware.factory.bin
-            TFT_LCD/T-Display-Long/V1/Firmware/ESPHome/.esphome/build/*/.pioenvs/*/firmware.bin
-            TFT_LCD/T-Display-Long/V1/Firmware/ESPHome/.esphome/build/*/*.bin
-            TFT_LCD/T-Display-Long/V1/Firmware/ESPHome/.esphome/build/*/.pioenvs/*/manifest.json
+            E-Paper/Waveshare_BWR/V1/Firmware/ESPHome/.esphome/build/*/.pioenvs/*/firmware.factory.bin
+            E-Paper/Waveshare_BWR/V1/Firmware/ESPHome/.esphome/build/*/.pioenvs/*/firmware.bin
+            E-Paper/Waveshare_BWR/V1/Firmware/ESPHome/.esphome/build/*/*.bin
           if-no-files-found: error
 
   build-site:
@@ -136,7 +137,6 @@ jobs:
   publish:
     name: Publish to GitHub Pages
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs:
       - build-firmware
       - build-site
@@ -150,7 +150,7 @@ jobs:
       - name: Download Firmware Artifact
         uses: actions/download-artifact@v4.1.8
         with:
-          name: firmware-tft
+          name: firmware-epd
           path: firmware
 
       - name: Check Firmware Artifacts
@@ -175,93 +175,6 @@ jobs:
         with:
           name: site
           path: output
-
-      # ------------------- ADDED: Generate manifest.json if missing -------------------
-      - name: Generate Firmware Manifest (ensure bin paths are set)
-        working-directory: output/firmware
-        env:
-          VERSION: ${{ env.project_version }}
-          DEVICE: ${{ env.DEVICE_NAME }}
-          CHIP_FAMILY: ESP32-S3   # change if needed (ESP32, ESP32-S2, ESP32-C3, ESP8266)
-        run: |
-          set -euo pipefail
-
-          # If a manifest already exists, keep it as-is.
-          if [ -f "manifest.json" ]; then
-            echo "manifest.json already exists. Leaving it untouched."
-            exit 0
-          fi
-
-          echo "Looking for firmware files in: $(pwd)"
-          echo "Tree:"
-          find . -maxdepth 3 -type f -print | sed 's|^\./||'
-
-          # Prefer factory -> any non-OTA bin
-          FACTORY="$(find . -type f -name '*.factory.bin' | head -n1 || true)"
-          if [ -z "${FACTORY}" ]; then
-            # Fall back to any .bin that is not explicitly an OTA file
-            FACTORY="$(find . -type f -name '*.bin' ! -name '*.ota.bin' | head -n1 || true)"
-          fi
-
-          # OTA preference: *.ota.bin, then a plain firmware.bin
-          OTA="$(find . -type f -name '*.ota.bin' | head -n1 || true)"
-          if [ -z "${OTA}" ]; then
-            OTA="$(find . -type f -name 'firmware.bin' | head -n1 || true)"
-          fi
-
-          # Must have *some* factory image to flash via 'parts'
-          if [ -z "${FACTORY}" ]; then
-            echo "ERROR: No factory (or fallback) .bin found to reference in manifest."
-            exit 1
-          fi
-
-          # Normalize to relative paths without ./ prefix
-          FACTORY_REL="${FACTORY#./}"
-          OTA_REL="${OTA#./}"
-
-          # Compute MD5 for OTA if present
-          OTA_MD5=""
-          if [ -n "${OTA}" ] && [ -f "${OTA}" ]; then
-            OTA_MD5="$(md5sum "${OTA}" | awk '{print $1}')"
-          fi
-
-          echo "Selected FACTORY: ${FACTORY_REL}"
-          if [ -n "${OTA_REL}" ]; then
-            echo "Selected OTA: ${OTA_REL} (md5: ${OTA_MD5})"
-          else
-            echo "No OTA image found; manifest will omit 'ota' block."
-          fi
-
-          # Build manifest.json (ESP Web Tools schema)
-          {
-            echo '{'
-            echo '  "name": "'${DEVICE}'.TFT-LCD",'
-            echo '  "version": "'${VERSION}'",'
-            echo '  "home_assistant_domain": "esphome",'
-            echo '  "new_install_prompt_erase": false,'
-            echo '  "builds": ['
-            echo '    {'
-            echo '      "chipFamily": "'${CHIP_FAMILY}'",'
-            if [ -n "${OTA_REL}" ]; then
-              echo '      "ota": {'
-              echo '        "path": "'${OTA_REL}'",'
-              [ -n "${OTA_MD5}" ] && echo '        "md5": "'${OTA_MD5}'",'
-              echo '        "summary": ""'
-              echo '      },'
-            fi
-            echo '      "parts": ['
-            echo '        { "path": "'${FACTORY_REL}'", "offset": 0 }'
-            echo '      ]'
-            echo '    }'
-            echo '  ]'
-            echo '}'
-          } > manifest.json
-
-          echo "Generated manifest.json:"
-          cat manifest.json
-
-
-      # -------------------------------------------------------------------------------
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3.0.1

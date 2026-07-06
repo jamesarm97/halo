@@ -1,18 +1,23 @@
 #Define Project
 substitutions:
   name: halo
-  version: "25.3.15.1"
+  version: "26.1.9.2"
   device_description: ${name} - v${version}.
 
 psram:
   mode: octal
-  speed: 120MHz
+  # speed: 120MHz
 
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 16MB
+  cpu_frequency: 240MHz
   framework:
     type: esp-idf
+    advanced:
+      enable_idf_experimental_features: true
+    # platform_version: 6.9.0
+    # version: 5.3.1
 
 esp32_improv:
   authorizer: none
@@ -20,6 +25,11 @@ esp32_improv:
 external_components:
   - source: github://yashmulgaonkar/esphome-components
     components: [axs15231, sy6970]
+
+  - source: github://pr#7770 # RMT driver, remove rmt_channel when using esp-idf
+    components: [ remote_base, remote_receiver, remote_transmitter, esp32_rmt, esp32_rmt_led_strip ]
+    refresh: 0s
+
 
 spi:
   id: lily_spi
@@ -159,13 +169,14 @@ output:
     id: backlight
     frequency: 100Hz  #Datasheet suggests low-frequency PWM. Should prevent stability issues.
     
-sy6970:
-  i2c_id: touch_i2c
-  state_led_enable: false  # To turn off the blinking green status LED
+# sy6970:
+#   i2c_id: touch_i2c
+#   state_led_enable: false  # To turn off the blinking green status LED
 
 display:
-  - platform: axs15231
+  - platform: qspi_dbi
     id: lily_display
+    model: AXS15231
     spi_id: lily_spi
     dimensions:
       height: 640
@@ -296,6 +307,19 @@ number:
     update_interval: never
     step: 0.1
     mode: box
+  - platform: template
+    name: MICS4514 NO2 Offset
+    id: mics4514_no2_offset
+    restore_value: true
+    initial_value: 0
+    min_value: -1.0
+    max_value: 1.0
+    entity_category: "CONFIG"
+    unit_of_measurement: "ppm"
+    optimistic: true
+    update_interval: never
+    step: 0.01
+    mode: box
 
 binary_sensor:
   - platform: status
@@ -313,7 +337,16 @@ sensor:
     id: wifi_signal_db
     update_interval: 60s
     entity_category: "diagnostic"
-      
+
+  - platform: template
+    name: "Computed AQI"
+    id: computed_halo_aqi
+    unit_of_measurement: "AQI"
+    accuracy_decimals: 0
+    device_class: "aqi"
+    state_class: "measurement"
+    update_interval: never  # We'll update it manually
+
   - platform: scd4x
     id: scd40
     co2:
@@ -365,6 +398,8 @@ sensor:
     nitrogen_dioxide:
       name: Nitrogen Dioxide
       id: "no2"
+      filters:
+        - lambda: return x - id(mics4514_no2_offset).state;
       on_value:
         then:
           - lvgl.label.update:
@@ -673,6 +708,7 @@ sensor:
                 } else {
                   aqi = 500.0;
                 }
+                id(computed_halo_aqi).publish_state((int)aqi);
 
                 // Return color based on AQI
                 if (aqi <= 50) {
@@ -908,25 +944,38 @@ text_sensor:
         return std::string("Extremely abnormal");}    
 
 light:
+  # - platform: esp32_rmt_led_strip
+  #   id: rgb_light
+  #   name: "Halo"
+  #   pin: GPIO47
+  #   rgb_order: GRB
+  #   default_transition_length: 2s
+  #   chipset: SK6812
+  #   num_leds: 11
+  #   effects:
+  #     - pulse:
+  #         name: "Slow Pulse" 
+  #         transition_length: 500ms
+  #         update_interval: 500ms
+  #         min_brightness: 10%
+  #         max_brightness: 50%
+  #     - addressable_rainbow:
+  #         name: Rainbow Effect With Custom Values
+  #         speed: 10
+  #         width: 50
+
   - platform: esp32_rmt_led_strip
+    name: Halo
     id: rgb_light
-    name: "Halo"
+    rgb_order: GRB
     pin: GPIO47
-    default_transition_length: 0s
+    num_leds: 12
     chipset: WS2812
-    num_leds: 11
-    rgb_order: grb
+    restore_mode: RESTORE_AND_OFF
     effects:
-      - pulse:
-          name: "Slow Pulse"
-          transition_length: 500ms
-          update_interval: 500ms
-          min_brightness: 10%
-          max_brightness: 50%
       - addressable_rainbow:
-          name: Rainbow Effect With Custom Values
-          speed: 10
-          width: 50
+          name: Addressable Rainbow
+
   - platform: monochromatic
     output: backlight
     name: "Display Backlight"
